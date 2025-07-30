@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IT Support Assistant</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .chat-container {
+            flex-grow: 1;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 20px;
+            margin-bottom: 20px;
+            overflow-y: auto;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: 20%;
+        }
+        .bot-message {
+            background-color: #f5f5f5;
+            margin-right: 20%;
+        }
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+        #user-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #1976d2;
+        }
+        .message-metrics {
+            margin-top: 8px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        .message-metrics details {
+            margin-top: 5px;
+        }
+        .message-metrics summary {
+            cursor: pointer;
+            color: #2196f3;
+        }
+        .message-metrics small {
+            display: block;
+            margin-top: 5px;
+            padding: 5px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <h1>IT Support Assistant</h1>
+    <div class="chat-container" id="chat-container"></div>
+    <div class="input-container">
+        <input type="text" id="user-input" placeholder="Ask about incidents, RCA, patterns...">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+        function addMessage(message, isUser, metrics = null) {
+            const chatContainer = document.getElementById('chat-container');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            
+            // Create message content
+            if (isUser) {
+                messageDiv.textContent = message;
+            } else {
+                // For bot responses, handle HTML content and add metrics
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content';
+                if (message.includes('<table>')) {
+                    contentDiv.innerHTML = message;
+                } else {
+                    contentDiv.innerHTML = message;
+                }
+                messageDiv.appendChild(contentDiv);
+                
+                // Add metrics if available
+                if (metrics) {
+                    const metricsDiv = document.createElement('div');
+                    metricsDiv.className = 'message-metrics';
+                    metricsDiv.innerHTML = `
+                        <details>
+                            <summary>Query Metrics</summary>
+                            <small>
+                                Response Time: ${metrics.response_time}<br>
+                                Total Tokens: ${metrics.total_tokens}<br>
+                                Prompt Tokens: ${metrics.prompt_tokens}<br>
+                                Completion Tokens: ${metrics.completion_tokens}<br>
+                                Cost: ${metrics.cost}
+                            </small>
+                        </details>
+                    `;
+                    messageDiv.appendChild(metricsDiv);
+                }
+            }
+            
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('user-input');
+            const message = input.value.trim();
+            
+            if (message) {
+                addMessage(message, true);
+                input.value = '';
+
+                try {
+                    const response = await fetch('/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ message: message })
+                    });
+
+                    const data = await response.json();
+                    addMessage(data.response, false, data.metrics);
+                } catch (error) {
+                    addMessage('Error: Could not get response from server', false);
+                }
+            }
+        }
+
+        document.getElementById('user-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
