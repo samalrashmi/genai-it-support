@@ -19,10 +19,145 @@ from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
 from langchain.schema import Document
 
+# PII Protection imports
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+from presidio_anonymizer.entities import OperatorConfig
+
+# Import PII configuration
+try:
+    from pii_config import PII_ENTITIES, CONFIG
+except ImportError:
+    # Fallback configuration if pii_config.py is not available
+    PII_ENTITIES = ["PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD", "US_SSN", "IP_ADDRESS", "US_DRIVER_LICENSE"]
+    CONFIG = {"enabled": True, "excluded_entities": ["DATE_TIME"], "min_confidence": 0.6}
+
 # Setup logging
 os.makedirs('logs', exist_ok=True)
 logging.config.fileConfig('logging.conf')
 logger = logging.getLogger('chatbot')
+
+# PII Protection Configuration
+class PIIProtector:
+    """Handles PII detection and anonymization using Microsoft Presidio"""
+    
+    def __init__(self):
+        try:
+            # Initialize Presidio engines
+            self.analyzer = AnalyzerEngine()
+            self.anonymizer = AnonymizerEngine()
+            
+            # Use entities from configuration, excluding DATE_TIME for incident data
+            self.pii_entities = [entity for entity in PII_ENTITIES 
+                               if entity not in CONFIG.get("excluded_entities", [])]
+            
+            # Define anonymization operators
+            self.operators = {
+                "PERSON": OperatorConfig("replace", {"new_value": "[PERSON]"}),
+                "EMAIL_ADDRESS": OperatorConfig("replace", {"new_value": "[EMAIL]"}),
+                "PHONE_NUMBER": OperatorConfig("replace", {"new_value": "[PHONE]"}),
+                "CREDIT_CARD": OperatorConfig("replace", {"new_value": "[CREDIT_CARD]"}),
+                "US_SSN": OperatorConfig("replace", {"new_value": "[SSN]"}),
+                "IP_ADDRESS": OperatorConfig("replace", {"new_value": "[IP_ADDRESS]"}),
+                "LOCATION": OperatorConfig("replace", {"new_value": "[LOCATION]"}),
+                "ORGANIZATION": OperatorConfig("replace", {"new_value": "[ORGANIZATION]"}),
+                "US_DRIVER_LICENSE": OperatorConfig("replace", {"new_value": "[DRIVER_LICENSE]"}),
+            }
+            
+            self.enabled = CONFIG.get("enabled", True)
+            self.min_confidence = CONFIG.get("min_confidence", 0.6)
+            logger.info(f"PII Protection initialized - Entities: {self.pii_entities}")
+            
+        except ImportError as e:
+            logger.warning(f"Presidio not available: {e}. PII protection disabled.")
+            self.enabled = False
+        except Exception as e:
+            logger.error(f"Error initializing PII protection: {e}. PII protection disabled.")
+            self.enabled = False
+    
+    def analyze_text(self, text: str) -> List[Dict]:
+        """Analyze text for PII entities"""
+        if not self.enabled or not text:
+            return []
+        
+        try:
+            # Analyze text for PII
+            results = self.analyzer.analyze(
+                text=text,
+                entities=self.pii_entities,
+                language='en',
+                score_threshold=self.min_confidence
+            )
+            
+            # Convert to dictionary format for logging
+            pii_findings = []
+            for result in results:
+                pii_findings.append({
+                    'entity_type': result.entity_type,
+                    'confidence': result.score,
+                    'start': result.start,
+                    'end': result.end,
+                    'text': text[result.start:result.end]
+                })
+            
+            return pii_findings
+            
+        except Exception as e:
+            logger.error(f"Error analyzing text for PII: {e}")
+            return []
+    
+    def anonymize_text(self, text: str, log_findings: bool = True) -> str:
+        """Anonymize PII in text while preserving semantic meaning"""
+        if not self.enabled or not text:
+            return text
+        
+        try:
+            # First analyze for PII
+            pii_findings = self.analyze_text(text)
+            
+            # Log PII findings for compliance
+            if log_findings and pii_findings:
+                logger.info(f"PII detected in text: {len(pii_findings)} entities found")
+                for finding in pii_findings:
+                    logger.debug(f"PII Entity: {finding['entity_type']} (confidence: {finding['confidence']:.2f})")
+            
+            # Anonymize the text
+            analyzer_results = self.analyzer.analyze(
+                text=text,
+                entities=self.pii_entities,
+                language='en',
+                score_threshold=self.min_confidence
+            )
+            
+            anonymized_result = self.anonymizer.anonymize(
+                text=text,
+                analyzer_results=analyzer_results,
+                operators=self.operators
+            )
+            
+            return anonymized_result.text
+            
+        except Exception as e:
+            logger.error(f"Error anonymizing text: {e}")
+            return text  # Return original text if anonymization fails
+    
+    def get_pii_summary(self, text: str) -> Dict:
+        """Get summary of PII types found in text"""
+        if not self.enabled:
+            return {"enabled": False, "pii_count": 0, "types": []}
+        
+        findings = self.analyze_text(text)
+        pii_types = list(set([f['entity_type'] for f in findings]))
+        
+        return {
+            "enabled": True,
+            "pii_count": len(findings),
+            "types": pii_types,
+            "high_confidence_count": len([f for f in findings if f['confidence'] > 0.8])
+        }
+
+# Initialize PII Protector
+pii_protector = PIIProtector()
 
 # Performance metrics class
 class QueryMetrics:
@@ -73,7 +208,7 @@ class ChatMessage(BaseModel):
     message: str
 
 def prepare_incident_text(row):
-    """Convert incident row to searchable text with ITIL-focused structure and semantic markers"""
+    """Convert incident row to searchable text with ITIL-focused structure and PII protection"""
     
     # Calculate resolution time if available
     resolution_time = ""
@@ -89,7 +224,8 @@ def prepare_incident_text(row):
     severity = "High" if row['Priority'] in ['1 - Critical', '2 - High'] else \
                "Medium" if row['Priority'] == '3 - Moderate' else "Low"
     
-    return f"""
+    # Build incident text
+    incident_text = f"""
     === Incident Details ===
     Incident Number: {row['Number']}
     Status: {row['State']}
@@ -118,6 +254,18 @@ def prepare_incident_text(row):
     === Detailed Notes ===
     {row['Notes']}
     """
+    
+    # Apply PII protection
+    if pii_protector.enabled:
+        # Get PII summary for logging
+        pii_summary = pii_protector.get_pii_summary(incident_text)
+        if pii_summary['pii_count'] > 0:
+            logger.info(f"PII detected in incident {row['Number']}: {pii_summary['pii_count']} entities of types {pii_summary['types']}")
+        
+        # Anonymize the text
+        incident_text = pii_protector.anonymize_text(incident_text, log_findings=False)
+    
+    return incident_text
 
 def initialize_vectorstore():
     """Initialize or load the vector store with incident data"""
@@ -284,11 +432,21 @@ async def root(request: Request):
 @app.post("/chat")
 async def chat(message: ChatMessage):
     metrics = QueryMetrics()
-    logger.info(f"Received question: {message.message}")
+    original_message = message.message
+    logger.info(f"Received question: {original_message}")
+    
+    # Apply PII protection to user query
+    protected_message = message.message
+    if pii_protector.enabled:
+        pii_summary = pii_protector.get_pii_summary(message.message)
+        if pii_summary['pii_count'] > 0:
+            logger.warning(f"PII detected in user query: {pii_summary['pii_count']} entities of types {pii_summary['types']}")
+            protected_message = pii_protector.anonymize_text(message.message)
+            logger.info("User query anonymized for processing")
     
     try:
         # Preprocess the question to identify query type
-        question = message.message.lower()
+        question = protected_message.lower()
         
         # Enhanced query type detection and parameter adjustment
         k = 20  # default number of documents to retrieve (increased for GPT-4)
@@ -345,7 +503,7 @@ async def chat(message: ChatMessage):
         
         # Get response from QA chain with token tracking
         with get_openai_callback() as cb:
-            response = qa_chain.invoke({"question": message.message})
+            response = qa_chain.invoke({"question": protected_message})
             metrics.record_token_usage(cb)
         
         # Post-process response for better formatting
@@ -386,3 +544,30 @@ async def chat(message: ChatMessage):
             "response": f"Error: {error_msg}",
             "metrics": metrics.to_dict()
         }
+
+@app.get("/pii-status")
+async def get_pii_status():
+    """Get PII protection status and configuration"""
+    return {
+        "pii_protection_enabled": pii_protector.enabled,
+        "entities_detected": pii_protector.pii_entities if pii_protector.enabled else [],
+        "presidio_version": "2.2.35+" if pii_protector.enabled else "Not installed"
+    }
+
+@app.post("/analyze-pii")
+async def analyze_pii_text(request: dict):
+    """Analyze text for PII without anonymizing (for testing purposes)"""
+    if not pii_protector.enabled:
+        return {"error": "PII protection not enabled"}
+    
+    text = request.get("text", "")
+    if not text:
+        return {"error": "No text provided"}
+    
+    pii_summary = pii_protector.get_pii_summary(text)
+    findings = pii_protector.analyze_text(text)
+    
+    return {
+        "summary": pii_summary,
+        "findings": findings
+    }

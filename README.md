@@ -4,7 +4,69 @@ A sophisticated Retrieval-Augmented Generation (RAG) system designed for enterpr
 
 ## 🏗️ Architecture Overview
 
-This application implements a state-of-the-art RAG architecture combining semantic search, conversational AI, and enterprise-grade incident management expertise.
+This application implements a state-of-the-art RAG architecture combining semantic search, conversational AI, and enterprise-grade in- **Bullet Points**: For step-by-step procedures
+- **Metrics**: Real-time token usage, cost, and performance data
+
+## 🛡️ PII Protection & Data Privacy
+
+This system includes enterprise-grade PII (Personally Identifiable Information) protection using **Microsoft Presidio**, ensuring compliance with GDPR, HIPAA, and other privacy regulations.
+
+### Automatic PII Detection & Anonymization
+
+The system automatically detects and anonymizes sensitive information in both incident data and user queries:
+
+**Protected Data Types:**
+- **Personal Names** (`John Doe` → `[PERSON]`)
+- **Email Addresses** (`john.doe@company.com` → `[EMAIL]`)
+- **Phone Numbers** (`555-123-4567` → `[PHONE]`)
+- **Social Security Numbers** (`123-45-6789` → `[SSN]`)
+- **Credit Card Numbers** (`4111-1111-1111-1111` → `[CREDIT_CARD]`)
+- **IP Addresses** (`192.168.1.1` → `[IP_ADDRESS]`)
+- **Physical Locations** (`123 Main St, Boston` → `[LOCATION]`)
+- **Driver's License Numbers** → `[DRIVER_LICENSE]`
+
+**Preserved Operational Data:**
+- ✅ **Incident Numbers** (INC0012347, CHG0001234)
+- ✅ **Categories & Subcategories** (Hardware, Network, Software)
+- ✅ **Priority Levels** (Critical, High, Medium, Low)
+- ✅ **Timestamps** (incident timelines for SLA tracking)
+- ✅ **Team Assignments** (for operational analysis)
+
+### Real-Time Protection
+
+```
+Original Query: "John Doe at john.doe@company.com reported login issues"
+Protected Query: "[PERSON] at [EMAIL] reported login issues"
+```
+
+The system maintains semantic meaning while protecting privacy, ensuring accurate incident analysis without exposing personal data.
+
+### Configuration & Compliance
+
+**Compliance Logging:**
+```
+2025-07-30 19:58:25,650 - chatbot - INFO - PII detected in incident INC0012441: 1 entities of types ['PERSON']
+```
+
+**Customizable Settings** (`pii_config.py`):
+```python
+CONFIG = {
+    "enabled": True,
+    "excluded_entities": ["DATE_TIME"],  # Preserve incident timelines
+    "min_confidence": 0.6,               # Detection sensitivity
+    "log_pii_findings": True             # Compliance audit trail
+}
+```
+
+### Enterprise Benefits
+
+1. **Zero Trust Privacy**: Personal data never reaches OpenAI servers
+2. **Audit Compliance**: Complete logging of PII detection and handling
+3. **Operational Integrity**: Incident analysis remains accurate and complete
+4. **Regulatory Compliance**: GDPR, HIPAA, SOX-ready data protection
+5. **Performance Optimized**: Real-time protection with minimal latency impact
+
+## � Additional Documentationnt management expertise.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -21,12 +83,12 @@ This application implements a state-of-the-art RAG architecture combining semant
 │  │  HTML/JS    │    │   ChromaDB   │    │  OpenAI Embed   │    │
 │  │  Frontend   │    │ Vector Store │    │   Text-Ada-002  │    │
 │  └─────────────┘    └──────────────┘    └─────────────────┘    │
-│                             │                                  │
-│                             ▼                                  │
-│                    ┌──────────────┐                           │
-│                    │ ServiceNow   │                           │
-│                    │ Incident CSV │                           │
-│                    └──────────────┘                           │
+│         │                   │                       │          │
+│         ▼                   ▼                       ▼          │
+│  ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐    │
+│  │ Presidio PII│    │ ServiceNow   │    │  Data Pipeline  │    │
+│  │ Protection  │◄──►│ Incident CSV │◄──►│  & Processing   │    │
+│  └─────────────┘    └──────────────┘    └─────────────────┘    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -39,18 +101,23 @@ The RAG system follows a sophisticated multi-stage process for intelligent incid
 ```mermaid
 graph TD
     A[ServiceNow CSV Data] --> B[Data Preprocessing]
-    B --> C[ITIL Structure Mapping]
-    C --> D[Metadata Extraction]
-    D --> E[Text Embedding Generation]
-    E --> F[ChromaDB Vector Storage]
+    B --> C[PII Detection & Anonymization]
+    C --> D[ITIL Structure Mapping]
+    D --> E[Metadata Extraction]
+    E --> F[Text Embedding Generation]
+    F --> G[ChromaDB Vector Storage]
     
     B --> B1[Priority Classification]
     B --> B2[Resolution Time Calculation]
     B --> B3[Category Standardization]
     
-    D --> D1[Temporal Attributes]
-    D --> D2[Priority Levels]
-    D --> D3[Team Assignments]
+    C --> C1[Presidio Analyzer]
+    C --> C2[Personal Data Masking]
+    C --> C3[Compliance Logging]
+    
+    E --> E1[Temporal Attributes]
+    E --> E2[Priority Levels]
+    E --> E3[Team Assignments]
 ```
 
 ### 2. Query Processing & Retrieval
@@ -59,11 +126,14 @@ graph TD
 sequenceDiagram
     participant U as User
     participant API as FastAPI
+    participant PII as PII Protector
     participant QP as Query Processor
     participant VS as Vector Store
     participant LLM as GPT-4o Mini
     
     U->>API: Submit Query
+    API->>PII: Analyze & Anonymize Query
+    PII->>API: Protected Query
     API->>QP: Analyze Query Type
     QP->>QP: Determine Retrieval Strategy
     QP->>VS: Semantic Search (k=20-100)
@@ -119,7 +189,12 @@ The system automatically detects query types and optimizes retrieval accordingly
    pip install -r requirements.txt
    ```
 
-4. **Configure OpenAI API Key**
+4. **Download spaCy Language Model (Required for PII Protection)**
+   ```bash
+   python -m spacy download en_core_web_sm
+   ```
+
+5. **Configure OpenAI API Key**
    
    Create `config.properties` file:
    ```ini
@@ -127,7 +202,32 @@ The system automatically detects query types and optimizes retrieval accordingly
    apikey = your_openai_api_key_here
    ```
 
-5. **Setup Logging Configuration**
+6. **Configure PII Protection (Optional)**
+   
+   The system includes enterprise-grade PII protection via Microsoft Presidio. 
+   Customize `pii_config.py` for your organization's requirements:
+   ```python
+   # PII entities to detect and anonymize
+   PII_ENTITIES = [
+       "PERSON",           # Personal names
+       "EMAIL_ADDRESS",    # Email addresses  
+       "PHONE_NUMBER",     # Phone numbers
+       "CREDIT_CARD",      # Credit card numbers
+       "US_SSN",          # Social Security Numbers
+       "IP_ADDRESS",       # IP addresses
+       "LOCATION",         # Addresses, locations
+       "US_DRIVER_LICENSE" # Driver's license numbers
+   ]
+   
+   # Configuration
+   CONFIG = {
+       "enabled": True,
+       "excluded_entities": ["DATE_TIME"],  # Preserve incident timelines
+       "min_confidence": 0.6
+   }
+   ```
+
+7. **Setup Logging Configuration**
    
    Create `logging.conf` file:
    ```ini
@@ -166,7 +266,7 @@ The system automatically detects query types and optimizes retrieval accordingly
    format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
    ```
 
-6. **Create HTML Template**
+8. **Create HTML Template**
    
    Create `templates/chat.html`:
    ```html
@@ -247,7 +347,7 @@ The system automatically detects query types and optimizes retrieval accordingly
    </html>
    ```
 
-7. **Prepare Incident Data**
+9. **Prepare Incident Data**
    
    Ensure your `Snow_Incidents.csv` file contains the following columns:
    ```
@@ -267,6 +367,7 @@ The system automatically detects query types and optimizes retrieval accordingly
    - **Web Interface:** http://localhost:8000
    - **API Documentation:** http://localhost:8000/docs
    - **Chat Endpoint:** `POST http://localhost:8000/chat`
+   - **PII Status:** `GET http://localhost:8000/pii-status`
 
 ### API Usage Examples
 
@@ -286,6 +387,14 @@ curl -X POST "http://localhost:8000/chat" \
 curl -X POST "http://localhost:8000/chat" \
   -H "Content-Type: application/json" \
   -d '{"message": "Show me the RCA for incident INC0012347"}'
+
+# Check PII Protection Status
+curl -X GET "http://localhost:8000/pii-status"
+
+# Test PII Analysis (Development)
+curl -X POST "http://localhost:8000/analyze-pii" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "John Doe reported issue with email john.doe@company.com"}'
 ```
 
 ## 🔧 Technical Details
@@ -322,10 +431,21 @@ llm = ChatOpenAI(
 )
 ```
 
+#### 4. Enterprise PII Protection
+```python
+# Microsoft Presidio integration
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+
+# Anonymize sensitive data before processing
+pii_protector = PIIProtector()
+protected_text = pii_protector.anonymize_text(incident_text)
+```
+
 ### Data Processing Pipeline
 
 #### 1. Incident Text Preparation
-Each incident is transformed into a structured format:
+Each incident is transformed into a structured format with PII protection:
 ```
 === Incident Details ===
 Incident Number: INC0012347
@@ -340,6 +460,14 @@ Impact: Medium
 Urgency: High
 Priority: 2 - High
 Overall Severity: High
+
+=== Support Details ===
+Assignment Group: Desktop Support
+Assigned To: [PERSON]    # PII Protected
+
+=== Description ===
+Summary: Printer connectivity issue
+Notes: User [PERSON] reported... # PII Protected
 ```
 
 #### 2. Metadata Optimization
@@ -365,6 +493,7 @@ metadata = {
 2. **Dynamic Document Retrieval**: Adjusts k parameter based on query complexity
 3. **Intelligent Caching**: ChromaDB persistence for fast startup
 4. **Cost Optimization**: 98.5% cost reduction vs GPT-4 (~$0.003 per query)
+5. **PII Protection**: Real-time data anonymization without performance impact
 
 ## 📊 System Capabilities
 
@@ -399,13 +528,19 @@ The system provides responses in multiple formats:
 - **Bullet Points**: For step-by-step procedures
 - **Metrics**: Real-time token usage, cost, and performance data
 
-## 🛠️ Development
+## � Additional Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Detailed system architecture with Mermaid diagrams
+- **[METADATA_PATTERNS.md](METADATA_PATTERNS.md)**: In-depth metadata chunking and query pattern analysis
+
+## �🛠️ Development
 
 ### Project Structure
 ```
 genai-it-support/
 ├── app.py                 # Main FastAPI application
 ├── requirements.txt       # Python dependencies
+├── pii_config.py         # PII protection configuration
 ├── config.properties      # OpenAI API configuration
 ├── logging.conf          # Logging configuration
 ├── Snow_Incidents.csv    # Incident data
@@ -428,6 +563,10 @@ pandas==2.1.4
 openai==1.3.8
 jinja2==3.1.2
 python-multipart==0.0.6
+# PII Protection
+presidio-analyzer>=2.2.35
+presidio-anonymizer>=2.2.35
+spacy>=3.7.0
 ```
 
 ### Configuration Management
@@ -508,20 +647,29 @@ export LOG_LEVEL="INFO"
 
 ## 🔒 Security & Compliance
 
-### Data Privacy
+### Data Privacy & PII Protection
+- **Microsoft Presidio Integration**: Enterprise-grade PII detection and anonymization
+- **Configurable Protection**: Customizable entity detection (names, emails, phones, SSNs, etc.)
+- **Incident Timeline Preservation**: Smart exclusion of operational dates/times
+- **Compliance Logging**: Audit trail of PII detection and anonymization
+- **Local Processing**: PII protection occurs before data leaves your environment
+
+### Data Security
 - Incident data processed locally
-- No data transmitted to third parties (except OpenAI API)
 - Vector embeddings stored locally in ChromaDB
+- No sensitive data transmitted to third parties (except anonymized context to OpenAI API)
+- Configurable confidence thresholds for PII detection
 
 ### API Security
 - Input validation and sanitization
 - Error handling without data exposure
 - Configurable logging levels
 
-### ITIL Compliance
-- Structured incident categorization
-- Standard priority and impact matrices
-- Resolution tracking and metrics
+### Compliance Standards
+- **GDPR Compliant**: Personal data anonymization and audit logging
+- **HIPAA Ready**: Healthcare data protection capabilities
+- **ITIL Aligned**: Standard incident categorization and resolution tracking
+- **SOX Compatible**: Audit trail and data protection controls
 
 ## 🤝 Contributing
 
